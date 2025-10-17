@@ -1,0 +1,40 @@
+[project]
+name = "stacks-piggy-boss"
+description = "Target savings smart contracts"
+authors = []
+telemetry = true
+cache_dir = "./.cache"
+
+[contracts.sip010-ft-trait]
+path = "contracts/sip010-ft-trait.clar"
+
+[contracts.sip009-nft-trait]
+path = "contracts/sip009-nft-trait.clar"
+
+[contracts.mock-stx-token]
+path = "contracts/mock-stx-token.clar"
+depends_on = ["sip010-ft-trait"]
+
+[contracts.achievement-nft]
+path = "contracts/achievement-nft.clar"
+depends_on = ["sip009-nft-trait"]
+
+[contracts.savings-goals]
+path = "contracts/savings-goals.clar"
+depends_on = ["sip010-ft-trait", "achievement-nft"]
+
+# [contracts.counter]
+# path = "contracts/counter.clar"
+# epoch = "latest"
+
+[repl.analysis]
+passes = ["check_checker"]
+check_checker = { trusted_sender = false, trusted_caller = false, callee_filter = false }
+
+# Check-checker settings:
+# trusted_sender: if true, inputs are trusted after tx_sender has been checked.
+# trusted_caller: if true, inputs are trusted after contract-caller has been checked.
+# callee_filter: if true, untrusted data may be passed into a private function without a
+# warning, if it gets checked inside. This check will also propagate up to the
+# caller.
+# More informations: https://www.hiro.so/blog/new-safety-checks-in-clarinet
