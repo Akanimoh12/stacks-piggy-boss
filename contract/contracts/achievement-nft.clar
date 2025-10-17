@@ -1,5 +1,6 @@
 (impl-trait .sip009-nft-trait.sip009-nft-trait)
 
+;; Error helpers for the NFT contract
 (define-constant err-owner-only (err u300))
 (define-constant err-not-found (err u301))
 (define-constant err-unauthorized (err u302))
@@ -8,16 +9,19 @@
 (define-constant err-invalid-purpose (err u305))
 (define-constant err-empty-base-uri (err u306))
 
+;; Basic NFT settings that I tweak through owner-only calls
 (define-data-var contract-owner principal tx-sender)
 (define-data-var token-name (string-ascii 32) "Savings Achievement")
 (define-data-var token-symbol (string-ascii 10) "SAVES")
 (define-data-var last-token-id uint u0)
 (define-data-var base-uri (string-ascii 256) "ipfs://")
 
+;; Only the savings-goals contract is allowed to mint
 (define-constant savings-goals-contract .savings-goals)
 
 (define-non-fungible-token savings-achievement uint)
 
+;; Metadata for each token and a map back from goal id to nft id
 (define-map token-metadata
   uint
   {
@@ -31,18 +35,22 @@
 
 (define-map goal-nft-map uint uint)
 
+;; Quick owner check for admin actions
 (define-private (assert-owner (caller principal))
   (ok (asserts! (is-eq caller (var-get contract-owner)) err-owner-only))
 )
 
+;; Only trust calls coming from the savings contract
 (define-private (is-authorized-minter (caller principal))
   (is-eq caller savings-goals-contract)
 )
 
+;; Read: last minted token id
 (define-read-only (get-last-token-id)
   (ok (var-get last-token-id))
 )
 
+;; Read: every token points to the same base URI for now
 (define-read-only (get-token-uri (token-id uint))
   (match (nft-get-owner? savings-achievement token-id)
     some-owner (ok (some (var-get base-uri)))
@@ -50,18 +58,22 @@
   )
 )
 
+;; Read: owner lookup
 (define-read-only (get-owner (token-id uint))
   (ok (nft-get-owner? savings-achievement token-id))
 )
 
+;; Read: fetch stored metadata (goal id, amounts, timestamps)
 (define-read-only (get-token-metadata (token-id uint))
   (ok (map-get? token-metadata token-id))
 )
 
+;; Read: ask whether a goal already minted an NFT
 (define-read-only (get-nft-by-goal (goal-id uint))
   (ok (map-get? goal-nft-map goal-id))
 )
 
+;; Read: standards helpers for name and symbol
 (define-read-only (get-name)
   (ok (var-get token-name))
 )
@@ -70,6 +82,8 @@
   (ok (var-get token-symbol))
 )
 
+;; Public: transfers are locked down so achievements stay soulbound
+;; token-id -> which badge, sender/recipient -> must match and be owner
 (define-public (transfer (token-id uint) (sender principal) (recipient principal))
   (let ((owner (unwrap! (nft-get-owner? savings-achievement token-id) err-not-found)))
     (asserts! (is-eq tx-sender sender) err-unauthorized)
@@ -79,6 +93,8 @@
   )
 )
 
+;; Public: mint an achievement when a goal completes
+;; goal-id -> source goal, recipient -> should match tx-sender, target-amount -> savings target, purpose -> story
 (define-public (mint-achievement (goal-id uint) (recipient principal) (target-amount uint) (purpose (string-utf8 256)))
   (let ((caller contract-caller))
     (asserts! (is-authorized-minter caller) err-unauthorized)
@@ -109,6 +125,8 @@
   )
 )
 
+;; Public: owner can tweak the base metadata URI
+;; new-base-uri -> ascii string stored on-chain
 (define-public (set-base-uri (new-base-uri (string-ascii 256)))
   (begin
     (try! (assert-owner tx-sender))

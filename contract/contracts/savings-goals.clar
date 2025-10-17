@@ -1,3 +1,4 @@
+;; Standard error helpers I reuse around the goal logic
 (define-constant err-owner-only (err u200))
 (define-constant err-not-found (err u201))
 (define-constant err-unauthorized (err u202))
@@ -8,11 +9,14 @@
 (define-constant err-invalid-duration (err u207))
 (define-constant err-empty-purpose (err u208))
 
+;; 10% penalty on early withdrawals
 (define-constant emergency-withdrawal-penalty u10)
 
+;; Track who deployed this contract and the running goal id counter
 (define-data-var contract-owner principal tx-sender)
 (define-data-var goal-nonce uint u0)
 
+;; Primary store for each savings goal
 (define-map savings-goals
   uint
   {
@@ -28,24 +32,30 @@
   }
 )
 
+;; Quick lookup of goal ids owned by a principal
 (define-map user-goals principal (list 100 uint))
 
+;; Simple owner check used by admin-only calls
 (define-private (assert-owner (caller principal))
   (ok (asserts! (is-eq caller (var-get contract-owner)) err-owner-only))
 )
 
+;; Convenience wrapper that returns this contract principal
 (define-private (contract-principal)
   (as-contract tx-sender)
 )
 
+;; Read: get a goal by id
 (define-read-only (get-goal (goal-id uint))
   (ok (map-get? savings-goals goal-id))
 )
 
+;; Read: list all goal ids for a user
 (define-read-only (get-user-goals (user principal))
   (ok (default-to (list) (map-get? user-goals user)))
 )
 
+;; Read: surface key progress metrics for a goal
 (define-read-only (get-goal-progress (goal-id uint))
   (match (map-get? savings-goals goal-id)
     goal (ok {
@@ -58,6 +68,7 @@
   )
 )
 
+;; Read: check whether a goal has expired based on duration
 (define-read-only (is-goal-expired (goal-id uint))
   (match (map-get? savings-goals goal-id)
     goal (ok (>= block-height (+ (get start-block goal) (get duration-blocks goal))))
@@ -65,6 +76,7 @@
   )
 )
 
+;; Read: calculate how much a saver would get back in an emergency
 (define-read-only (calculate-emergency-withdrawal (goal-id uint))
   (match (map-get? savings-goals goal-id)
     goal 
@@ -83,10 +95,13 @@
   )
 )
 
+;; Read: expose the next goal id so the UI can display it
 (define-read-only (get-next-goal-id)
   (ok (var-get goal-nonce))
 )
 
+;; Public: create a fresh savings goal
+;; target-amount -> how much to save, duration-blocks -> max lifetime, purpose -> goal story
 (define-public (create-goal (target-amount uint) (duration-blocks uint) (purpose (string-utf8 256)))
   (let (
     (goal-id (var-get goal-nonce))
@@ -122,6 +137,8 @@
   )
 )
 
+;; Public: deposit mock STX into a goal
+;; goal-id -> which goal, amount -> how much to add
 (define-public (deposit (goal-id uint) (amount uint))
   (let (
     (goal (unwrap! (map-get? savings-goals goal-id) err-not-found))
@@ -156,6 +173,8 @@
   )
 )
 
+;; Public: withdraw funds once the goal target is met
+;; goal-id -> the completed goal we are cashing out
 (define-public (withdraw-completed (goal-id uint))
   (let (
     (goal (unwrap! (map-get? savings-goals goal-id) err-not-found))
@@ -180,6 +199,8 @@
   )
 )
 
+;; Public: let the saver break their goal early with a penalty
+;; goal-id -> target goal to close early
 (define-public (emergency-withdraw (goal-id uint))
   (let (
     (goal (unwrap! (map-get? savings-goals goal-id) err-not-found))
@@ -212,6 +233,8 @@
   )
 )
 
+;; Public: mint the achievement NFT linked to the goal
+;; goal-id -> goal that just completed
 (define-public (claim-achievement-nft (goal-id uint))
   (let (
     (goal (unwrap! (map-get? savings-goals goal-id) err-not-found))
@@ -233,6 +256,8 @@
   )
 )
 
+;; Public: admin withdrawal of accumulated emergency penalties
+;; amount -> how much to pull, recipient -> where funds should land
 (define-public (withdraw-penalties (amount uint) (recipient principal))
   (let ((vault (contract-principal)))
     (try! (assert-owner tx-sender))
